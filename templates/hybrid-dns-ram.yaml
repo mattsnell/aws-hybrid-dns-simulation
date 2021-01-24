@@ -1,0 +1,35 @@
+Parameters:
+  AccountId:
+    Type: String
+    Description: Provide the 12 digit account number to share the resource with
+    AllowedPattern: ^\d{12}$
+    
+  SourceStack:
+    Type: String
+    Description: Provide the name of the source stack where the resources to be imported are described
+    Default: hybrid-dns
+
+Resources:
+  DataCenterResolverRuleResourceShare:
+    Type: AWS::RAM::ResourceShare
+    Properties: 
+      AllowExternalPrincipals: true
+      Name: r53-resolver
+      Principals: 
+        - !Ref AccountId
+      ResourceArns: 
+        - 
+          Fn::ImportValue:
+            !Sub ${SourceStack}-DataCenterResolverRule
+
+  DataCenterReverseResolverRuleResourceShare:
+    Type: AWS::RAM::ResourceShare
+    Properties: 
+      AllowExternalPrincipals: true
+      Name: r53-resolver
+      Principals: 
+        - !Ref AccountId
+      ResourceArns: 
+        - 
+          Fn::ImportValue:
+            !Sub ${SourceStack}-DataCenterReverseResolverRule

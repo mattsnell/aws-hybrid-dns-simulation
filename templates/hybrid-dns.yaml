@@ -1,0 +1,1311 @@
+Description: Hybrid DNS simulation
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: 
+          default: Simulated data center network configuration
+        Parameters:
+        - DataCenterVpcName
+        - DataCenterVpcCidr
+      - Label: 
+          default: Shared services VPC network configuration
+        Parameters:
+        - ServicesVpcName
+        - ServicesVpcCidr
+      - Label: 
+          default: Simulated data center name server configuration
+        Parameters:
+        - DataCenterResolver
+        - Ns1InstanceName
+        - Ns1InstanceDNSInterface
+        - Ns2InstanceName
+        - Ns2InstanceDNSInterface
+      - Label: 
+          default: Shared services VPC instance configuration
+        Parameters:
+        - ServicesClientInstanceName
+      - Label: 
+          default: Domain configuration
+        Parameters:
+        - DomainName
+        - DomainPTR
+        - SubDomainName
+        - SubDomainPTR
+      - Label: 
+          default: Amazon Route 53 Resolver IPs
+        Parameters:
+        - ResolverInboundA
+        - ResolverInboundB
+        - ResolverOutboundA
+        - ResolverOutboundB
+      - Label:
+          default: Global instance options
+        Parameters:
+          - InstanceType
+          - ImageId
+          - DetailedMonitoring
+      - Label:
+          default: Global gateway options (applies to all VPCs)
+        Parameters:
+        - HANatGateway
+        - S3Gateway
+        - DynamoDBGateway
+
+Parameters:
+  HANatGateway:
+    Type: String
+    Description: Set to true if you need NAT Gateways deployed in all AZs
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Valid values are 'true' or 'false'
+    Default: false
+
+  S3Gateway:
+    Type: String
+    Description: Set to true if you want an S3 Gateway endpoint
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Valid values are 'true' or 'false'
+    Default: true
+
+  DynamoDBGateway:
+    Type: String
+    Description: Set to true if you want a DynamoDB Gateway endpoint
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Valid values are 'true' or 'false'
+    Default: true
+
+  DataCenterVpcName:
+    Type: String
+    Description: Provide a name for the data center VPC
+    Default: simulated-data-center
+
+  DataCenterVpcCidr:
+    Type: String
+    Description: Provide the VPC CIDR range for the simulated data center
+    Default: 172.30.0.0/16
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+
+  DataCenterResolver:
+    Type: String
+    Description:  Provide the IP address for Data Center Route 53 Resolver
+    Default: 172.30.0.2
+
+  DomainName:
+    Type: String
+    Description: Provide the domain name for the on-prem infrastructure
+    Default: example.private
+
+  DomainPTR:
+    Type: String
+    Description: Provide the in-addr.arpa domain for the on-prem domain
+    Default: 30.172.in-addr.arpa
+
+  SubDomainName:
+    Type: String
+    Description: Provide the domain name for the cloud infrastructure
+    Default: aws.example.private
+
+  SubDomainPTR:
+    Type: String
+    Description: Provide the in-addr.arpa domain for the cloud infrastructure domain
+    Default: 0.10.in-addr.arpa
+
+  Ns1InstanceName:
+    Type: String
+    Description:  Provide the name of the first name server
+    Default: ns1
+
+  Ns1InstanceDNSInterface:
+    Type: String
+    Description:  Provide the IP address for NS1's DNS traffic
+    Default: 172.30.1.250
+
+  Ns2InstanceName:
+    Type: String
+    Description:  Provide the name of the second name server
+    Default: ns2
+
+  Ns2InstanceDNSInterface:
+    Type: String
+    Description:  Provide the IP address for NS2's DNS traffic
+    Default: 172.30.3.250
+
+  ImageId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+ 
+  InstanceType:
+    Type: String
+    Description: Provide an EC2 instance type
+    Default: t3.micro
+
+  DetailedMonitoring:
+    Type: String
+    Description: Enable Detailed Monitoring on instance?
+    AllowedValues:
+      - true
+      - false
+    ConstraintDescription: Enter true or false
+    Default: false
+
+  ServicesVpcName:
+    Type: String
+    Description: Provide a name for the shared services (DNS) VPC
+    Default: dns-vpc
+
+  ServicesVpcCidr:
+    Type: String
+    Description: Provide the VPC CIDR range for the shared services (DNS) VPC
+    Default: 10.0.0.0/16
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+
+  ServicesClientInstanceName:
+    Type: String
+    Description:  Provide the name of shared services client instance
+    Default: dns-vpc-client
+
+  # best practice is to specify the ip address of each inbound resolver endpoint
+  ResolverInboundA:
+    Type: String
+    Description: Provide an IP address for the inbound resolver ENI in the shared services private subnet A
+    Default: 10.0.1.10
+    AllowedPattern: '\b((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}\b'
+
+  # best practice is to specify the ip address of each inbound resolver endpoint
+  ResolverInboundB:
+    Type: String
+    Description: Provide an IP address for the inbound resolver ENI in the shared services private subnet B
+    Default: 10.0.3.10
+    AllowedPattern: '\b((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}\b'
+
+  ResolverOutboundA:
+    Type: String
+    Description: Provide an IP address for the outbound resolver ENI in the shared services private subnet A
+    Default: 10.0.1.11
+    AllowedPattern: '\b((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}\b' 
+
+  ResolverOutboundB:
+    Type: String
+    Description: Provide an IP address for the outbound resolver ENI in the shared services private subnet B
+    Default: 10.0.3.11
+    AllowedPattern: '\b((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}\b'
+
+Conditions:
+  DeployHaNatGateway: !Equals [ !Ref HANatGateway, true ]
+  DeployS3Gateway: !Equals [ !Ref S3Gateway, true ]
+  DeployDynamoDBGateway: !Equals [ !Ref DynamoDBGateway, true ]
+
+Resources:
+  # vpc - data center vpc
+  DataCenterVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref DataCenterVpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Ref DataCenterVpcName
+
+  DataCenterPublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt DataCenterVPC.CidrBlock, 1, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: DataCenterVpcName
+              - public
+              - Fn::Select:
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt DataCenterVPC.CidrBlock, 2, 8 ]]
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: DataCenterVpcName
+              - private
+              - Fn::Select:
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt DataCenterVPC.CidrBlock, 3, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: DataCenterVpcName
+              - public
+              - Fn::Select:
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 3, !Cidr [ !GetAtt DataCenterVPC.CidrBlock, 4, 8 ]]
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: DataCenterVpcName
+              - private
+              - Fn::Select:
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Ref DataCenterVpcName
+
+  DataCenterIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref DataCenterIGW
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterNatGatewayEIPSubnetA:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+
+  DataCenterNatGatewayEIPSubnetB:
+    Condition: DeployHaNatGateway
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+
+  DataCenterNatGatewaySubnetA:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt DataCenterNatGatewayEIPSubnetA.AllocationId
+      SubnetId: !Ref DataCenterPublicSubnetA
+      Tags: 
+        - Key: Name
+          Value: !Ref DataCenterVpcName
+
+  DataCenterNatGatewaySubnetB:
+    Condition: DeployHaNatGateway
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt DataCenterNatGatewayEIPSubnetB.AllocationId
+      SubnetId: !Ref DataCenterPublicSubnetB
+      Tags: 
+        - Key: Name
+          Value: !Ref DataCenterVpcName
+
+  DataCenterPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref DataCenterVpcName
+              - public
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPrivateRouteTableSubnetA:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref DataCenterVpcName
+              - private-subnet-a
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPrivateRouteTableSubnetB:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref DataCenterVpcName
+              - private-subnet-b
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref DataCenterIGW
+      RouteTableId: !Ref DataCenterPublicRouteTable
+
+  DataCenterPrivateRouteSubnetA:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref DataCenterNatGatewaySubnetA
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetA
+
+  DataCenterPrivateRouteSubnetB:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If
+        - DeployHaNatGateway
+        - !Ref DataCenterNatGatewaySubnetB
+        - !Ref DataCenterNatGatewaySubnetA
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetB
+      
+  DataCenterPublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataCenterPublicRouteTable
+      SubnetId: !Ref DataCenterPublicSubnetA
+
+  DataCenterPublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataCenterPublicRouteTable
+      SubnetId: !Ref DataCenterPublicSubnetB
+
+  DataCenterPrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetA
+      SubnetId: !Ref DataCenterPrivateSubnetA
+
+  DataCenterPrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetB
+      SubnetId: !Ref DataCenterPrivateSubnetB
+      
+  DataCenterS3GatewayEndpoint:
+    Condition: DeployS3Gateway
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      RouteTableIds: 
+        - !Ref DataCenterPublicRouteTable
+        - !Ref DataCenterPrivateRouteTableSubnetA
+        - !Ref DataCenterPrivateRouteTableSubnetB
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref DataCenterVPC
+      
+  DataCenterDynamoDBGatewayEndpoint:
+    Condition: DeployDynamoDBGateway
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      RouteTableIds: 
+        - !Ref DataCenterPublicRouteTable
+        - !Ref DataCenterPrivateRouteTableSubnetA
+        - !Ref DataCenterPrivateRouteTableSubnetB
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcEndpointType: Gateway
+      VpcId: !Ref DataCenterVPC
+
+  DataCenterDHCPOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties: 
+      DomainNameServers: 
+        - !Sub ${Ns1InstanceDNSInterface}, ${Ns2InstanceDNSInterface}
+
+  DataCenterDHCPOptionsAssociation:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    DependsOn:
+      - Ns1InstanceNetworkInterfaceAttachment
+      - Ns2InstanceNetworkInterfaceAttachment
+    Properties: 
+      DhcpOptionsId: !Ref DataCenterDHCPOptions
+      VpcId: !Ref DataCenterVPC
+
+  # vpc - shared services - dns vpc
+  ServicesVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: !Ref ServicesVpcCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags: 
+        - Key: Name
+          Value: !Ref ServicesVpcName
+
+  ServicesPublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt ServicesVPC.CidrBlock, 1, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: ServicesVpcName
+              - public
+              - Fn::Select:
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref ServicesVPC
+
+  ServicesPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt ServicesVPC.CidrBlock, 2, 8 ]]
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: ServicesVpcName
+              - private
+              - Fn::Select:
+                - 0
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref ServicesVPC
+
+  ServicesPublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt ServicesVPC.CidrBlock, 3, 8 ]]
+      MapPublicIpOnLaunch: true
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: ServicesVpcName
+              - public
+              - Fn::Select:
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref ServicesVPC
+
+  ServicesPrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties: 
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !Select [ 3, !Cidr [ !GetAtt ServicesVPC.CidrBlock, 4, 8 ]]
+      MapPublicIpOnLaunch: false
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - Ref: ServicesVpcName
+              - private
+              - Fn::Select:
+                - 1
+                - Fn::GetAZs: !Ref AWS::Region
+      VpcId: !Ref ServicesVPC
+
+  ServicesIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Ref ServicesVpcName
+
+  ServicesIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref ServicesIGW
+      VpcId: !Ref ServicesVPC
+
+  ServicesNatGatewayEIPSubnetA:
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+
+  ServicesNatGatewayEIPSubnetB:
+    Condition: DeployHaNatGateway
+    Type: AWS::EC2::EIP
+    Properties: 
+      Domain: vpc
+
+  ServicesNatGatewaySubnetA:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ServicesNatGatewayEIPSubnetA.AllocationId
+      SubnetId: !Ref ServicesPublicSubnetA
+      Tags: 
+        - Key: Name
+          Value: !Ref ServicesVpcName
+
+  ServicesNatGatewaySubnetB:
+    Condition: DeployHaNatGateway
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt ServicesNatGatewayEIPSubnetB.AllocationId
+      SubnetId: !Ref ServicesPublicSubnetB
+      Tags: 
+        - Key: Name
+          Value: !Ref ServicesVpcName
+
+  ServicesPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref ServicesVpcName
+              - public
+      VpcId: !Ref ServicesVPC
+
+  ServicesPrivateRouteTableSubnetA:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref ServicesVpcName
+              - private-subnet-a
+      VpcId: !Ref ServicesVPC
+
+  ServicesPrivateRouteTableSubnetB:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+        - Key: Name
+          Value: !Join
+            - "-"
+            - - !Ref ServicesVpcName
+              - private-subnet-b
+      VpcId: !Ref ServicesVPC
+
+  ServicesPublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref ServicesIGW
+      RouteTableId: !Ref ServicesPublicRouteTable
+
+  ServicesPrivateRouteSubnetA:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref ServicesNatGatewaySubnetA
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetA
+
+  ServicesPrivateRouteSubnetB:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If
+        - DeployHaNatGateway
+        - !Ref ServicesNatGatewaySubnetB
+        - !Ref ServicesNatGatewaySubnetA
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetB
+      
+  ServicesPublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ServicesPublicRouteTable
+      SubnetId: !Ref ServicesPublicSubnetA
+
+  ServicesPublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ServicesPublicRouteTable
+      SubnetId: !Ref ServicesPublicSubnetB
+
+  ServicesPrivateSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetA
+      SubnetId: !Ref ServicesPrivateSubnetA
+
+  ServicesPrivateSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: 
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetB
+      SubnetId: !Ref ServicesPrivateSubnetB
+      
+  ServicesS3GatewayEndpoint:
+    Condition: DeployS3Gateway
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      RouteTableIds: 
+        - !Ref ServicesPublicRouteTable
+        - !Ref ServicesPrivateRouteTableSubnetA
+        - !Ref ServicesPrivateRouteTableSubnetB
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref ServicesVPC
+      
+  ServicesDynamoDBGatewayEndpoint:
+    Condition: DeployDynamoDBGateway
+    Type: AWS::EC2::VPCEndpoint
+    Properties: 
+      RouteTableIds: 
+        - !Ref ServicesPublicRouteTable
+        - !Ref ServicesPrivateRouteTableSubnetA
+        - !Ref ServicesPrivateRouteTableSubnetB
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.dynamodb
+      VpcEndpointType: Gateway
+      VpcId: !Ref ServicesVPC
+
+  # vpc - peering
+  VPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties: 
+      VpcId: !Ref DataCenterVPC
+      PeerVpcId: !Ref ServicesVPC
+
+  DataCenterPublicRouteTableVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref ServicesVpcCidr
+      RouteTableId: !Ref DataCenterPublicRouteTable
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  DataCenterPrivateRouteTableSubnetAVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref ServicesVpcCidr
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetA
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  DataCenterPrivateRouteTableSubnetBVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref ServicesVpcCidr
+      RouteTableId: !Ref DataCenterPrivateRouteTableSubnetB
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  ServicesPublicRouteTableVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref DataCenterVpcCidr
+      RouteTableId: !Ref ServicesPublicRouteTable
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  ServicesPrivateRouteTableSubnetAVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref DataCenterVpcCidr
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetA
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  ServicesPrivateRouteTableSubnetBVPCPeeringRoute:
+    Type: AWS::EC2::Route
+    Properties: 
+      DestinationCidrBlock: !Ref DataCenterVpcCidr
+      RouteTableId: !Ref ServicesPrivateRouteTableSubnetB
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  # route 53
+  CloudHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties: 
+      HostedZoneConfig: 
+        Comment: !Sub ${SubDomainName} private hosted zone
+      Name: !Sub ${SubDomainName}
+      VPCs: 
+        -   VPCId: !Ref ServicesVPC
+            VPCRegion: !Ref AWS::Region
+
+  InboundResolverEndpoint:
+    Type: AWS::Route53Resolver::ResolverEndpoint
+    Properties: 
+      Direction: INBOUND
+      # best practice is to specify the ip address of the endpoint vs. automatic selection
+      IpAddresses: 
+        - Ip: !Ref ResolverInboundA
+          SubnetId: !Ref ServicesPrivateSubnetA
+        - Ip: !Ref ResolverInboundB
+          SubnetId: !Ref ServicesPrivateSubnetB
+      Name: hybrid-dns-inbound
+      SecurityGroupIds: 
+        - !Ref Route53ResolverSecurityGroup
+  
+  OutboundResolverEndpoint:
+    Type: AWS::Route53Resolver::ResolverEndpoint
+    Properties: 
+      Direction: OUTBOUND
+      IpAddresses: 
+        - Ip: !Ref ResolverOutboundA
+          SubnetId: !Ref ServicesPrivateSubnetA
+        - Ip: !Ref ResolverOutboundB
+          SubnetId: !Ref ServicesPrivateSubnetB
+      Name: hybrid-dns-outbound
+      SecurityGroupIds: 
+        - !Ref Route53ResolverSecurityGroup
+
+  DataCenterResolverRule:
+    Type: AWS::Route53Resolver::ResolverRule
+    Properties: 
+      DomainName: !Ref DomainName
+      Name: Data Center Resolver
+      ResolverEndpointId: !GetAtt OutboundResolverEndpoint.ResolverEndpointId
+      RuleType: FORWARD
+      TargetIps: 
+        -   Ip: !Ref Ns1InstanceDNSInterface
+            Port: "53"
+        -   Ip: !Ref Ns2InstanceDNSInterface
+            Port: "53"
+
+  DataCenterReverseResolverRule:
+    Type: AWS::Route53Resolver::ResolverRule
+    Properties: 
+      DomainName: !Ref DomainPTR
+      Name: Data Center Reverse Resolver
+      ResolverEndpointId: !GetAtt OutboundResolverEndpoint.ResolverEndpointId
+      RuleType: FORWARD
+      TargetIps: 
+        -   Ip: !Ref Ns1InstanceDNSInterface
+            Port: "53"
+        -   Ip: !Ref Ns2InstanceDNSInterface
+            Port: "53"
+
+  DataCenterResolverRuleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties: 
+      ResolverRuleId: !GetAtt DataCenterResolverRule.ResolverRuleId
+      VPCId: !Ref ServicesVPC
+
+  DataCenterReverseResolverRuleAssociation:
+    Type: AWS::Route53Resolver::ResolverRuleAssociation
+    Properties: 
+      ResolverRuleId: !GetAtt DataCenterReverseResolverRule.ResolverRuleId
+      VPCId: !Ref ServicesVPC
+
+  ServicesClientInstanceRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Shared services client instance
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub ${ServicesClientInstanceName}.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  TestARecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Extra record for testing resolution
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub a.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  TestBRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Extra record for testing resolution
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub b.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  TestCRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Extra record for testing resolution
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub c.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  TestDRecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Extra record for testing resolution
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub d.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  TestERecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties: 
+      Comment: Extra record for testing resolution
+      HostedZoneId: !Ref CloudHostedZone
+      Name: !Sub e.${SubDomainName}
+      ResourceRecords: 
+        - !GetAtt ServicesClientInstance.PrivateDnsName
+      TTL: 300
+      Type: CNAME
+
+  ResolverQueryLoggingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties: 
+      RetentionInDays: 60
+
+  ResolverQueryLoggingConfig:
+    Type: AWS::Route53Resolver::ResolverQueryLoggingConfig
+    Properties: 
+      DestinationArn: !GetAtt ResolverQueryLoggingLogGroup.Arn
+
+  ResolverQueryLoggingConfigAssociation:
+    Type: AWS::Route53Resolver::ResolverQueryLoggingConfigAssociation
+    Properties: 
+      ResolverQueryLogConfigId: !Ref ResolverQueryLoggingConfig
+      ResourceId: !Ref ServicesVPC
+
+  # iam
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Role
+          Value: !Join
+            - " "
+            - - Instance profile role used by servers in  
+              - !Ref AWS::StackName
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # ec2
+  DNSServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: DNS Servers
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS traffic on TCP port 53
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS traffic on UDP port 53
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: dns-servers
+      VpcId: !Ref DataCenterVPC
+
+  Route53ResolverSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties: 
+      GroupDescription: Route 53 Resolver
+      SecurityGroupIngress: 
+        - IpProtocol: tcp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS traffic on TCP port 53
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+          Description: DNS traffic on UDP port 53
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      Tags: 
+        - Key: Name
+          Value: dns-r53-resolvers
+      VpcId: !Ref ServicesVPC
+
+  # ec2 - ns1
+  Ns1InstanceNetworkInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties: 
+      Description: Secondary network interface for NS1 DNS server
+      GroupSet: 
+        - !Ref DNSServerSecurityGroup
+      PrivateIpAddress: !Ref Ns1InstanceDNSInterface
+      SubnetId: !Ref DataCenterPrivateSubnetA
+      Tags: 
+        - Key: Name
+          Value: ns1-dns-interface
+
+  Ns1InstanceNetworkInterfaceAttachment:
+    Type: AWS::EC2::NetworkInterfaceAttachment
+    Properties: 
+      DeleteOnTermination: false
+      DeviceIndex: "1"
+      InstanceId: !Ref Ns1Instance
+      NetworkInterfaceId: !Ref Ns1InstanceNetworkInterface
+
+  Ns1Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              bash-completion: []
+              telnet: []
+              unbound: []
+              vim-enhanced: []
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackName}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/custom-resolv.conf:
+              content: !Sub |
+                options timeout:2 attempts:5
+                nameserver 127.0.0.1
+                nameserver ${Ns1InstanceDNSInterface}
+                nameserver ${Ns2InstanceDNSInterface}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/unbound/conf.d/resolver.conf:
+              content: !Sub |
+                server:
+                        interface: ${Ns1InstanceDNSInterface}
+                        interface: 127.0.0.1
+                        access-control: 0.0.0.0/0 allow
+                  val-permissive-mode: yes
+                  module-config: "iterator"
+                  logfile: /var/log/unbound
+                  verbosity: 1
+                  log-queries: yes
+
+                # ${DomainName} - unbound is authoritative
+                local-zone: "${DomainName}." transparent
+                local-zone: "${DomainPTR}." transparent
+                
+                local-data: "${Ns1InstanceName}.${DomainName}.	IN	A	${Ns1InstanceDNSInterface}"
+                local-data-ptr: "${Ns1InstanceDNSInterface} ${Ns1InstanceName}.${DomainName}"
+                local-data: "${Ns2InstanceName}.${DomainName}.	IN	A	${Ns2InstanceDNSInterface}"
+                local-data-ptr: "${Ns2InstanceDNSInterface} ${Ns2InstanceName}.${DomainName}"
+
+                # test records, forward only
+                local-data: "a.${DomainName}.	IN	A	172.30.0.10"
+                local-data: "b.${DomainName}.	IN	A	172.30.0.11"
+                local-data: "c.${DomainName}.	IN	A	172.30.0.12"
+                local-data: "d.${DomainName}.	IN	A	172.30.0.13"
+                local-data: "e.${DomainName}.	IN	A	172.30.0.14"
+
+                local-zone: "10.in-addr.arpa." transparent
+
+                forward-zone:
+                        name: "."
+                        forward-addr: ${DataCenterResolver}
+                forward-zone:
+                        name: "${SubDomainName}."
+                        forward-addr: ${ResolverInboundA}
+                        forward-addr: ${ResolverInboundB}
+                forward-zone:
+                        name: "${SubDomainPTR}."
+                        forward-addr: ${ResolverInboundA}
+                        forward-addr: ${ResolverInboundB}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_yum_update:
+              command: "yum update -y"
+            02_set_hostname:
+              command: !Sub "hostnamectl set-hostname ${Ns1InstanceName}"
+            03_create_unbound_log:
+              command: touch /var/log/unbound
+            04_chown_unbound_log:
+              command: chown unbound:unbound /var/log/unbound
+            05_supersede_resolvers:
+              command: !Sub echo "supersede domain-name-servers 127.0.0.1 ${Ns1InstanceDNSInterface} ${Ns2InstanceDNSInterface}" >> /etc/dhcp/dhclient.conf
+            06_update_resolv_conf:
+              command: cp /etc/custom-resolv.conf /etc/resolv.conf
+          services:
+            sysvinit:
+              unbound:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      Monitoring: !Ref DetailedMonitoring
+      SubnetId: !Ref DataCenterPrivateSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub ${Ns1InstanceName}.${DomainName}
+        - Key: Patch Group
+          Value: Critical
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource Ns1Instance --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource Ns1Instance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:    
+        Count: 1
+        Timeout: PT5M
+
+  # ec2 - ns2
+  Ns2InstanceNetworkInterface:
+    Type: AWS::EC2::NetworkInterface
+    Properties: 
+      Description: Secondary network interface for NS2 DNS server
+      GroupSet: 
+        - !Ref DNSServerSecurityGroup
+      PrivateIpAddress: !Ref Ns2InstanceDNSInterface
+      SubnetId: !Ref DataCenterPrivateSubnetB
+      Tags: 
+        - Key: Name
+          Value: ns1-dns-interface
+
+  Ns2InstanceNetworkInterfaceAttachment:
+    Type: AWS::EC2::NetworkInterfaceAttachment
+    Properties: 
+      DeleteOnTermination: false
+      DeviceIndex: "1"
+      InstanceId: !Ref Ns2Instance
+      NetworkInterfaceId: !Ref Ns2InstanceNetworkInterface
+
+  Ns2Instance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              bash-completion: []
+              telnet: []
+              unbound: []
+              vim-enhanced: []
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackName}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/custom-resolv.conf:
+              content: !Sub |
+                options timeout:2 attempts:5
+                nameserver 127.0.0.1
+                nameserver ${Ns2InstanceDNSInterface}
+                nameserver ${Ns1InstanceDNSInterface}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+            /etc/unbound/conf.d/resolver.conf:
+              content: !Sub |
+                server:
+                        interface: ${Ns2InstanceDNSInterface}
+                        interface: 127.0.0.1
+                        access-control: 0.0.0.0/0 allow
+                  val-permissive-mode: yes
+                  module-config: "iterator"
+                  logfile: /var/log/unbound
+                  verbosity: 1
+                  log-queries: yes
+
+                # ${DomainName} - unbound is authoritative
+                local-zone: "${DomainName}." transparent
+                local-zone: "${DomainPTR}." transparent
+
+                local-data: "${Ns1InstanceName}.${DomainName}.	IN	A	${Ns1InstanceDNSInterface}"
+                local-data-ptr: "${Ns1InstanceDNSInterface} ${Ns1InstanceName}.${DomainName}"
+                local-data: "${Ns2InstanceName}.${DomainName}.	IN	A	${Ns2InstanceDNSInterface}"
+                local-data-ptr: "${Ns2InstanceDNSInterface} ${Ns2InstanceName}.${DomainName}"
+
+                # test records, forward only
+                local-data: "a.${DomainName}.	IN	A	172.30.0.10"
+                local-data: "b.${DomainName}.	IN	A	172.30.0.11"
+                local-data: "c.${DomainName}.	IN	A	172.30.0.12"
+                local-data: "d.${DomainName}.	IN	A	172.30.0.13"
+                local-data: "e.${DomainName}.	IN	A	172.30.0.14"
+
+                local-zone: "10.in-addr.arpa." transparent
+
+                forward-zone:
+                        name: "."
+                        forward-addr: ${DataCenterResolver}
+                forward-zone:
+                        name: "${SubDomainName}."
+                        forward-addr: ${ResolverInboundA}
+                        forward-addr: ${ResolverInboundB}
+                forward-zone:
+                        name: "${SubDomainPTR}."
+                        forward-addr: ${ResolverInboundA}
+                        forward-addr: ${ResolverInboundB}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_yum_update:
+              command: "yum update -y"
+            02_set_hostname:
+              command: !Sub "hostnamectl set-hostname ${Ns2InstanceName}"
+            03_create_unbound_log:
+              command: touch /var/log/unbound
+            04_chown_unbound_log:
+              command: chown unbound:unbound /var/log/unbound
+            05_supersede_resolvers:
+              command: !Sub echo "supersede domain-name-servers 127.0.0.1 ${Ns2InstanceDNSInterface} ${Ns1InstanceDNSInterface}" >> /etc/dhcp/dhclient.conf
+            06_update_resolv_conf:
+              command: cp /etc/custom-resolv.conf /etc/resolv.conf
+          services:
+            sysvinit:
+              unbound:
+                enabled: true
+                ensureRunning: true
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      Monitoring: !Ref DetailedMonitoring
+      SubnetId: !Ref DataCenterPrivateSubnetB
+      Tags:
+        - Key: Name
+          Value: !Sub ${Ns2InstanceName}.${DomainName}
+        - Key: Patch Group
+          Value: Critical
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource Ns2Instance --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource Ns2Instance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:    
+        Count: 1
+        Timeout: PT5M
+
+   # ec2 - services client
+  ServicesClientInstance:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Init:
+        config:
+          packages:
+            yum:
+              bash-completion: []
+              telnet: []
+              vim-enhanced: []
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackName}
+              mode: "000644"
+              owner: "root"
+              group: "root"
+          commands:
+            01_yum_update:
+              command: "yum update -y"
+            02_set_hostname:
+              command: !Sub "hostnamectl set-hostname ${ServicesClientInstanceName}"
+    Properties:
+      IamInstanceProfile: !Ref InstanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      Monitoring: !Ref DetailedMonitoring
+      SubnetId: !Ref ServicesPrivateSubnetA
+      Tags:
+        - Key: Name
+          Value: !Sub ${ServicesClientInstanceName}.${SubDomainName}
+        - Key: Patch Group
+          Value: Critical
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          yum install -y aws-cfn-bootstrap
+          /opt/aws/bin/cfn-init --stack ${AWS::StackName} --resource ServicesClientInstance --region ${AWS::Region}
+          /opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource ServicesClientInstance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:    
+        Count: 1
+        Timeout: PT5M
+
+Outputs:
+  DataCenterResolverRule:
+    Description: Outbound Data Center Resolver Rule
+    Value: !GetAtt DataCenterResolverRule.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-DataCenterResolverRule
+
+  DataCenterReverseResolverRule:
+    Description: Outbound Data Center Reverse Resolver Rule
+    Value: !GetAtt DataCenterReverseResolverRule.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-DataCenterReverseResolverRule
+
+  CloudHostedZone:
+    Description: Private hosted zone for cloud domain
+    Value: !Ref CloudHostedZone
